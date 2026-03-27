@@ -188,6 +188,16 @@ class QuickbooksClient {
       
       this.accessToken = authResponse.token.access_token;
       
+      // QuickBooks issues a new refresh token on every refresh — save it!
+      // Without this, the old refresh token expires after 100 days and
+      // forces a manual re-authentication via the browser OAuth flow.
+      const tokens = authResponse.token as any;
+      if (tokens.refresh_token) {
+        this.refreshToken = tokens.refresh_token;
+        this.saveTokensToEnv();
+        console.error('[auth] Refresh token rotated and saved to .env');
+      }
+      
       // Calculate expiry time
       const expiresIn = authResponse.token.expires_in || 3600; // Default to 1 hour
       this.accessTokenExpiry = new Date(Date.now() + expiresIn * 1000);
