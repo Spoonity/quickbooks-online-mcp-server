@@ -5,16 +5,19 @@ export class QuickbooksMCPServer {
 
   private constructor() {}
 
+  /** Singleton — used in stdio mode. */
   public static GetServer(): McpServer {
     if (QuickbooksMCPServer.instance === null) {
-      QuickbooksMCPServer.instance = new McpServer({
-        name: "QuickBooks Online MCP Server",
-        version: "1.0.0",
-        capabilities: {
-          tools: {},
-        },
-      });
+      QuickbooksMCPServer.instance = QuickbooksMCPServer.GetServerInstance();
     }
     return QuickbooksMCPServer.instance;
+  }
+
+  /** Factory — creates a new instance. Used in HTTP mode for per-session isolation. */
+  public static GetServerInstance(): McpServer {
+    return new McpServer({
+      name: "QuickBooks Online MCP Server",
+      version: "1.0.0",
+    });
   }
 }
