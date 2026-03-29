@@ -127,7 +127,12 @@ function registerToolsForRole(server: ReturnType<typeof QuickbooksMCPServer.GetS
         for (const p of perms.denied) { if (tool.name.startsWith(p)) { denied = true; break; } }
         if (denied) continue;
         let allowed = perms.allowed.includes("*");
-        if (!allowed) { for (const p of perms.allowed) { if (tool.name.startsWith(p)) { allowed = true; break; } } }
+        if (!allowed) {
+            for (const p of perms.allowed) {
+                // Entries ending with _ are prefix matches, others are exact matches
+                if (p.endsWith("_") ? tool.name.startsWith(p) : tool.name === p) { allowed = true; break; }
+            }
+        }
         if (allowed) { RegisterTool(server, tool as any); count++; }
     }
     return count;

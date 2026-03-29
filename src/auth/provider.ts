@@ -92,8 +92,9 @@ export function isToolAllowedForRole(toolName: string, role: ApiKeyRole): boolea
 
     // Check allowed
     if (perms.allowedPrefixes.includes("*")) return true;
-    for (const prefix of perms.allowedPrefixes) {
-        if (toolName.startsWith(prefix)) return true;
+    for (const entry of perms.allowedPrefixes) {
+        // Entries ending with _ are prefix matches, others are exact matches
+        if (entry.endsWith("_") ? toolName.startsWith(entry) : toolName === entry) return true;
     }
 
     return false;
