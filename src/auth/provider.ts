@@ -1,9 +1,14 @@
 /**
- * QBO MCP OAuth 2.1 Provider — API Key Authentication
+ * QBO MCP OAuth 2.1 Provider — Multi-Key Role-Based Authentication
  *
- * Simple shared-secret model: users authenticate with `MCP_API_KEY`
- * as the client_secret. This gates access to the server while QBO
- * uses its own server-level OAuth connection.
+ * Supports multiple API keys with different roles:
+ *   - admin:    Full access to all 50 tools
+ *   - readonly: Only search/get/read tools
+ *   - finance:  Invoices, bills, bill payments, accounts, purchases
+ *   - editor:   Everything except delete tools
+ *
+ * On first boot with no keys in the DB, creates an admin key from
+ * MCP_API_KEY env var (backward compatible).
  *
  * Supports:
  *   - Dynamic Client Registration (DCR)
@@ -25,19 +30,77 @@ import {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { randomUUID, createHash } from "node:crypto";
-import { TokenStore } from "./token-store.js";
+import { TokenStore, ApiKeyRole } from "./token-store.js";
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
-const API_KEY = process.env.MCP_API_KEY ?? "";
+const BOOTSTRAP_API_KEY = process.env.MCP_API_KEY ?? "";
 const ACCESS_TOKEN_TTL_S = 24 * 60 * 60; // 24 hours
-
-if (!API_KEY) {
-    console.error("[auth] WARNING: MCP_API_KEY is not set — all auth will fail");
-}
 
 function hashKey(key: string): string {
     return createHash("sha256").update(key).digest("hex");
+}
+
+// ── Tool Access Control ─────────────────────────────────────────────────────
+
+/**
+ * Defines which tool name prefixes each role can access.
+ * Tool names follow the pattern: action_entity (e.g. search_customers, create_invoice)
+ */
+const ROLE_PERMISSIONS: Record<ApiKeyRole, { allowedPrefixes: string[]; deniedPrefixes: string[] }> = {
+    admin: {
+        allowedPrefixes: ["*"],  // everything
+        deniedPrefixes: [],
+    },
+    readonly: {
+        allowedPrefixes: ["search_", "get_", "read_"],
+        deniedPrefixes: [],
+    },
+    finance: {
+        allowedPrefixes: [
+            "search_", "get_", "read_",       // all reads
+            "create_invoice", "update_invoice", // invoices
+            "create_bill", "update_bill",       // bills
+            "create_bill_payment", "update_bill_payment", "get_bill_payment", "search_bill_payment",
+            "create_purchase", "update_purchase", "get_purchase", "search_purchase",
+            "search_accounts", "create_account", "update_account",
+            "create_journal_entry", "update_journal_entry", "get_journal_entry", "search_journal_entry",
+        ],
+        deniedPrefixes: ["delete_"],
+    },
+    editor: {
+        allowedPrefixes: ["*"],  // everything except delete
+        deniedPrefixes: ["delete_"],
+    },
+};
+
+export function isToolAllowedForRole(toolName: string, role: ApiKeyRole): boolean {
+    const perms = ROLE_PERMISSIONS[role];
+    if (!perms) return false;
+
+    // Check denied first
+    for (const prefix of perms.deniedPrefixes) {
+        if (toolName.startsWith(prefix)) return false;
+    }
+
+    // Check allowed
+    if (perms.allowedPrefixes.includes("*")) return true;
+    for (const prefix of perms.allowedPrefixes) {
+        if (toolName.startsWith(prefix)) return true;
+    }
+
+    return false;
+}
+
+/** Get a human-readable description of what a role can do */
+export function getRoleDescription(role: ApiKeyRole): string {
+    switch (role) {
+        case "admin": return "Full access — all tools including create, update, delete";
+        case "readonly": return "Read-only — search, get, and read tools only";
+        case "finance": return "Finance — read all + invoices, bills, payments, accounts, journals (no delete)";
+        case "editor": return "Editor — all tools except delete";
+        default: return "Unknown role";
+    }
 }
 
 // ── Known Redirect URIs ─────────────────────────────────────────────────────
@@ -69,12 +132,16 @@ interface AuthCodeEntry {
     clientId: string;
     codeChallenge: string;
     redirectUri: string;
+    role: ApiKeyRole;
+    owner: string;
     expiresAt: number;
 }
 
 interface TokenEntry {
     clientId: string;
     scopes: string[];
+    role: ApiKeyRole;
+    owner: string;
     expiresAt: number;
 }
 
@@ -151,12 +218,36 @@ export class QBOOAuthProvider implements OAuthServerProvider {
 
         this._clientsStore.setStore(store);
 
+        // Bootstrap: if no API keys exist and MCP_API_KEY is set, create an admin key
+        const existingKeys = store.getAllApiKeys();
+        if (existingKeys.length === 0 && BOOTSTRAP_API_KEY) {
+            store.saveApiKey({
+                id: randomUUID(),
+                keyHash: hashKey(BOOTSTRAP_API_KEY),
+                owner: "max@spoonity.com",
+                role: "admin",
+                label: "Bootstrap admin key",
+                active: true,
+                createdAt: Date.now(),
+            });
+            console.error(`[auth] Bootstrapped admin API key from MCP_API_KEY env var`);
+        }
+
+        // Log key count
+        const allKeys = store.getAllApiKeys();
+        console.error(`[auth] ${allKeys.length} API key(s) registered:`);
+        for (const k of allKeys) {
+            console.error(`  - ${k.label || k.id.substring(0, 8)} (${k.role}, owner: ${k.owner}, active: ${k.active})`);
+        }
+
         // Rehydrate tokens
         for (const pt of store.getAllTokens("access")) {
             if (pt.expiresAt < Date.now()) continue;
             this.accessTokens.set(pt.token, {
                 clientId: pt.clientId,
                 scopes: JSON.parse(pt.scopes),
+                role: (pt.role as ApiKeyRole) || "admin",
+                owner: pt.owner || "",
                 expiresAt: pt.expiresAt,
             });
         }
@@ -164,6 +255,8 @@ export class QBOOAuthProvider implements OAuthServerProvider {
             this.refreshTokens.set(pt.token, {
                 clientId: pt.clientId,
                 scopes: JSON.parse(pt.scopes),
+                role: (pt.role as ApiKeyRole) || "admin",
+                owner: pt.owner || "",
                 expiresAt: pt.expiresAt,
             });
         }
@@ -176,7 +269,6 @@ export class QBOOAuthProvider implements OAuthServerProvider {
 
     // ── Middleware ────────────────────────────────────────────────────────
 
-    /** Capture localhost redirect URIs for CLI tools */
     captureAuthorizeRedirectUri = (req: Request, _res: Response, next: NextFunction): void => {
         const redirectUri = (req.query?.redirect_uri ?? req.body?.redirect_uri) as string | undefined;
         if (redirectUri && isLocalhostRedirectUri(redirectUri)) {
@@ -204,7 +296,6 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         params: AuthorizationParams,
         res: Response
     ): Promise<void> {
-        // Show login form asking for API key
         const loginId = randomUUID();
         this.pendingAuthorize.set(loginId, { client, params });
         setTimeout(() => this.pendingAuthorize.delete(loginId), 10 * 60 * 1000);
@@ -213,7 +304,6 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         res.send(this.renderLoginForm(loginId));
     }
 
-    /** Login form POST handler */
     handleLoginPost = (req: Request, res: Response): void => {
         const { login_id, api_key } = req.body;
 
@@ -223,19 +313,31 @@ export class QBOOAuthProvider implements OAuthServerProvider {
             return;
         }
 
-        // Validate API key
-        if (!api_key || api_key !== API_KEY) {
+        if (!api_key) {
+            res.status(403).send("API key is required.");
+            return;
+        }
+
+        // Look up the key in the database
+        const keyHash = hashKey(api_key);
+        const apiKeyEntry = this.store?.getApiKeyByHash(keyHash);
+
+        if (!apiKeyEntry) {
+            console.error(`[auth] Invalid API key attempt (hash: ${keyHash.substring(0, 16)}...)`);
             res.status(403).send("Invalid API key.");
             return;
         }
 
         this.pendingAuthorize.delete(login_id);
-        this.completeAuthorize(pending.client, pending.params, res);
+        console.error(`[auth] Authenticated: ${apiKeyEntry.owner} (role: ${apiKeyEntry.role}, label: ${apiKeyEntry.label})`);
+        this.completeAuthorize(pending.client, pending.params, apiKeyEntry.role, apiKeyEntry.owner, res);
     };
 
     private completeAuthorize(
         client: OAuthClientInformationFull,
         params: AuthorizationParams,
+        role: ApiKeyRole,
+        owner: string,
         res: Response
     ): void {
         const code = randomUUID();
@@ -243,6 +345,8 @@ export class QBOOAuthProvider implements OAuthServerProvider {
             clientId: client.client_id,
             codeChallenge: params.codeChallenge,
             redirectUri: params.redirectUri,
+            role,
+            owner,
             expiresAt: Date.now() + 5 * 60 * 1000,
         });
 
@@ -250,7 +354,6 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         redirectUrl.searchParams.set("code", code);
         if (params.state) redirectUrl.searchParams.set("state", params.state);
 
-        console.error(`[oauth] Authorized client: ${client.client_id}`);
         res.redirect(302, redirectUrl.toString());
     }
 
@@ -289,16 +392,19 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         const tokenEntry: TokenEntry = {
             clientId: client.client_id,
             scopes: [],
+            role: entry.role,
+            owner: entry.owner,
             expiresAt,
         };
 
         this.accessTokens.set(accessToken, tokenEntry);
         this.refreshTokens.set(refreshToken, { ...tokenEntry, expiresAt: Infinity });
 
-        this.store?.saveToken({ token: accessToken, type: "access", clientId: client.client_id, scopes: "[]", expiresAt });
-        this.store?.saveToken({ token: refreshToken, type: "refresh", clientId: client.client_id, scopes: "[]", expiresAt: Infinity });
+        const persistBase = { clientId: client.client_id, scopes: "[]", role: entry.role, owner: entry.owner };
+        this.store?.saveToken({ ...persistBase, token: accessToken, type: "access", expiresAt });
+        this.store?.saveToken({ ...persistBase, token: refreshToken, type: "refresh", expiresAt: Infinity });
 
-        console.error(`[oauth] Issued tokens for client: ${client.client_id}`);
+        console.error(`[oauth] Issued tokens — role: ${entry.role}, owner: ${entry.owner}`);
 
         return {
             access_token: accessToken,
@@ -328,8 +434,10 @@ export class QBOOAuthProvider implements OAuthServerProvider {
 
         this.refreshTokens.delete(refreshToken);
         this.store?.deleteToken(refreshToken, "refresh");
-        this.store?.saveToken({ token: newAccessToken, type: "access", clientId: entry.clientId, scopes: "[]", expiresAt: newExpiry });
-        this.store?.saveToken({ token: newRefreshToken, type: "refresh", clientId: entry.clientId, scopes: "[]", expiresAt: Infinity });
+
+        const persistBase = { clientId: entry.clientId, scopes: "[]", role: entry.role, owner: entry.owner };
+        this.store?.saveToken({ ...persistBase, token: newAccessToken, type: "access", expiresAt: newExpiry });
+        this.store?.saveToken({ ...persistBase, token: newRefreshToken, type: "refresh", expiresAt: Infinity });
 
         return {
             access_token: newAccessToken,
@@ -353,6 +461,10 @@ export class QBOOAuthProvider implements OAuthServerProvider {
             clientId: entry.clientId,
             scopes: entry.scopes,
             expiresAt: Math.floor(entry.expiresAt / 1000),
+            extra: {
+                role: entry.role,
+                owner: entry.owner,
+            },
         };
     }
 

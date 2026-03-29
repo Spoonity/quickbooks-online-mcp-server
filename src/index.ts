@@ -24,6 +24,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { QuickbooksMCPServer } from "./server/qbo-mcp-server.js";
 import { RegisterTool } from "./helpers/register-tool.js";
 import { quickbooksClient } from "./clients/quickbooks-client.js";
+import type { ApiKeyRole } from "./auth/token-store.js";
 
 // Tool imports
 import { CreateCustomerTool } from "./tools/create-customer.tool.js";
@@ -86,70 +87,50 @@ const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN ?? "*";
 const MAX_SESSIONS = parseInt(process.env.MCP_MAX_SESSIONS ?? "50", 10);
 const SESSION_TTL_MS = parseInt(process.env.MCP_SESSION_TTL_MS ?? String(30 * 60 * 1000), 10);
 
-// ── Register all tools on a server instance ─────────────────────────────────
+// ── All tool definitions ────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ALL_TOOLS: Array<{ name: string; description: string; schema: any; handler: any }> = [
+    CreateCustomerTool, GetCustomerTool, UpdateCustomerTool, DeleteCustomerTool, SearchCustomersTool,
+    CreateEstimateTool, GetEstimateTool, UpdateEstimateTool, DeleteEstimateTool, SearchEstimatesTool,
+    CreateBillTool, UpdateBillTool, DeleteBillTool, GetBillTool, SearchBillsTool,
+    ReadInvoiceTool, SearchInvoicesTool, CreateInvoiceTool, UpdateInvoiceTool,
+    CreateAccountTool, UpdateAccountTool, SearchAccountsTool,
+    ReadItemTool, SearchItemsTool, CreateItemTool, UpdateItemTool,
+    CreateVendorTool, UpdateVendorTool, DeleteVendorTool, GetVendorTool, SearchVendorsTool,
+    CreateEmployeeTool, GetEmployeeTool, UpdateEmployeeTool, SearchEmployeesTool,
+    CreateJournalEntryTool, GetJournalEntryTool, UpdateJournalEntryTool, DeleteJournalEntryTool, SearchJournalEntriesTool,
+    CreateBillPaymentTool, GetBillPaymentTool, UpdateBillPaymentTool, DeleteBillPaymentTool, SearchBillPaymentsTool,
+    CreatePurchaseTool, GetPurchaseTool, UpdatePurchaseTool, DeletePurchaseTool, SearchPurchasesTool,
+];
+
+/** Register all tools (used in stdio mode — full access). */
 function registerAllTools(server: ReturnType<typeof QuickbooksMCPServer.GetServer>): void {
-    // Customers
-    RegisterTool(server, CreateCustomerTool);
-    RegisterTool(server, GetCustomerTool);
-    RegisterTool(server, UpdateCustomerTool);
-    RegisterTool(server, DeleteCustomerTool);
-    RegisterTool(server, SearchCustomersTool);
-    // Estimates
-    RegisterTool(server, CreateEstimateTool);
-    RegisterTool(server, GetEstimateTool);
-    RegisterTool(server, UpdateEstimateTool);
-    RegisterTool(server, DeleteEstimateTool);
-    RegisterTool(server, SearchEstimatesTool);
-    // Bills
-    RegisterTool(server, CreateBillTool);
-    RegisterTool(server, UpdateBillTool);
-    RegisterTool(server, DeleteBillTool);
-    RegisterTool(server, GetBillTool);
-    RegisterTool(server, SearchBillsTool);
-    // Invoices
-    RegisterTool(server, ReadInvoiceTool);
-    RegisterTool(server, SearchInvoicesTool);
-    RegisterTool(server, CreateInvoiceTool);
-    RegisterTool(server, UpdateInvoiceTool);
-    // Accounts
-    RegisterTool(server, CreateAccountTool);
-    RegisterTool(server, UpdateAccountTool);
-    RegisterTool(server, SearchAccountsTool);
-    // Items
-    RegisterTool(server, ReadItemTool);
-    RegisterTool(server, SearchItemsTool);
-    RegisterTool(server, CreateItemTool);
-    RegisterTool(server, UpdateItemTool);
-    // Vendors
-    RegisterTool(server, CreateVendorTool);
-    RegisterTool(server, UpdateVendorTool);
-    RegisterTool(server, DeleteVendorTool);
-    RegisterTool(server, GetVendorTool);
-    RegisterTool(server, SearchVendorsTool);
-    // Employees
-    RegisterTool(server, CreateEmployeeTool);
-    RegisterTool(server, GetEmployeeTool);
-    RegisterTool(server, UpdateEmployeeTool);
-    RegisterTool(server, SearchEmployeesTool);
-    // Journal Entries
-    RegisterTool(server, CreateJournalEntryTool);
-    RegisterTool(server, GetJournalEntryTool);
-    RegisterTool(server, UpdateJournalEntryTool);
-    RegisterTool(server, DeleteJournalEntryTool);
-    RegisterTool(server, SearchJournalEntriesTool);
-    // Bill Payments
-    RegisterTool(server, CreateBillPaymentTool);
-    RegisterTool(server, GetBillPaymentTool);
-    RegisterTool(server, UpdateBillPaymentTool);
-    RegisterTool(server, DeleteBillPaymentTool);
-    RegisterTool(server, SearchBillPaymentsTool);
-    // Purchases
-    RegisterTool(server, CreatePurchaseTool);
-    RegisterTool(server, GetPurchaseTool);
-    RegisterTool(server, UpdatePurchaseTool);
-    RegisterTool(server, DeletePurchaseTool);
-    RegisterTool(server, SearchPurchasesTool);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const tool of ALL_TOOLS) RegisterTool(server, tool as any);
+}
+
+/** Register only tools allowed for the given role (used in HTTP mode). */
+function registerToolsForRole(server: ReturnType<typeof QuickbooksMCPServer.GetServer>, role: ApiKeyRole): number {
+    // Dynamic import of isToolAllowedForRole would create a circular dep,
+    // so we define the role check inline using the same logic.
+    const ROLE_PERMS: Record<string, { allowed: string[]; denied: string[] }> = {
+        admin:    { allowed: ["*"], denied: [] },
+        readonly: { allowed: ["search_", "get_", "read_"], denied: [] },
+        finance:  { allowed: ["search_", "get_", "read_", "create_invoice", "update_invoice", "create_bill", "update_bill", "create_bill_payment", "update_bill_payment", "get_bill_payment", "search_bill_payment", "create_purchase", "update_purchase", "get_purchase", "search_purchase", "search_accounts", "create_account", "update_account", "create_journal_entry", "update_journal_entry", "get_journal_entry", "search_journal_entry"], denied: ["delete_"] },
+        editor:   { allowed: ["*"], denied: ["delete_"] },
+    };
+    const perms = ROLE_PERMS[role] ?? ROLE_PERMS.readonly;
+    let count = 0;
+    for (const tool of ALL_TOOLS) {
+        let denied = false;
+        for (const p of perms.denied) { if (tool.name.startsWith(p)) { denied = true; break; } }
+        if (denied) continue;
+        let allowed = perms.allowed.includes("*");
+        if (!allowed) { for (const p of perms.allowed) { if (tool.name.startsWith(p)) { allowed = true; break; } } }
+        if (allowed) { RegisterTool(server, tool as any); count++; }
+    }
+    return count;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -333,9 +314,14 @@ async function startHttpServer() {
                 return;
             }
 
-            // Create new session
+            // Extract role from auth context
+            const authInfo = (req as any).auth;
+            const role: ApiKeyRole = (authInfo?.extra?.role as ApiKeyRole) || "readonly";
+            const owner: string = (authInfo?.extra?.owner as string) || "unknown";
+
+            // Create new session with role-filtered tools
             const sessionServer = QuickbooksMCPServer.GetServerInstance();
-            registerAllTools(sessionServer);
+            const toolCount = registerToolsForRole(sessionServer, role);
 
             const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
@@ -353,7 +339,7 @@ async function startHttpServer() {
                     console.error(`[session] Expired: ${sid} (total: ${sessions.size})`);
                 }, SESSION_TTL_MS);
                 sessions.set(sid, { server: sessionServer, transport, timer });
-                console.error(`[session] New: ${sid} (total: ${sessions.size})`);
+                console.error(`[session] New: ${sid} (role: ${role}, owner: ${owner}, tools: ${toolCount}, total: ${sessions.size})`);
             }
         } catch (err) {
             console.error("[mcp] Error:", err);
@@ -380,12 +366,86 @@ async function startHttpServer() {
         res.sendStatus(204);
     });
 
+    // ── Admin: API Key Management ────────────────────────────────────────
+    // Protected by a simple check: only admin keys can manage keys.
+    // Usage: curl -H "Authorization: Bearer <admin-token>" /admin/keys
+
+    app.get("/admin/keys", bearerAuth, async (req, res) => {
+        const authInfo = (req as any).auth;
+        if (authInfo?.extra?.role !== "admin") {
+            res.status(403).json({ error: "Admin access required" });
+            return;
+        }
+        const keys = tokenStore.getAllApiKeys().map(k => ({
+            id: k.id,
+            owner: k.owner,
+            role: k.role,
+            label: k.label,
+            active: k.active,
+            createdAt: new Date(k.createdAt).toISOString(),
+        }));
+        res.json({ keys });
+    });
+
+    app.post("/admin/keys", bearerAuth, express.json(), async (req, res) => {
+        const authInfo = (req as any).auth;
+        if (authInfo?.extra?.role !== "admin") {
+            res.status(403).json({ error: "Admin access required" });
+            return;
+        }
+        const { owner, role, label } = req.body;
+        if (!owner || !role) {
+            res.status(400).json({ error: "owner and role are required" });
+            return;
+        }
+        const validRoles = ["admin", "readonly", "finance", "editor"];
+        if (!validRoles.includes(role)) {
+            res.status(400).json({ error: `role must be one of: ${validRoles.join(", ")}` });
+            return;
+        }
+        // Generate a new API key
+        const { randomBytes } = await import("node:crypto");
+        const rawKey = randomBytes(30).toString("base64url");
+        const { createHash: ch } = await import("node:crypto");
+
+        tokenStore.saveApiKey({
+            id: randomUUID(),
+            keyHash: ch("sha256").update(rawKey).digest("hex"),
+            owner,
+            role,
+            label: label || `${role} key for ${owner}`,
+            active: true,
+            createdAt: Date.now(),
+        });
+
+        console.error(`[admin] Created ${role} API key for ${owner}`);
+        // Return the raw key ONCE — it can't be retrieved later
+        res.json({
+            apiKey: rawKey,
+            owner,
+            role,
+            label: label || `${role} key for ${owner}`,
+            warning: "Save this key now — it cannot be retrieved again.",
+        });
+    });
+
+    app.delete("/admin/keys/:id", bearerAuth, async (req, res) => {
+        const authInfo = (req as any).auth;
+        if (authInfo?.extra?.role !== "admin") {
+            res.status(403).json({ error: "Admin access required" });
+            return;
+        }
+        tokenStore.deactivateApiKey(req.params.id as string);
+        console.error(`[admin] Deactivated key: ${req.params.id}`);
+        res.json({ success: true });
+    });
+
     // ── Start ───────────────────────────────────────────────────────────
     app.listen(PORT, () => {
         console.error(`[qbo-mcp] HTTP server running on port ${PORT}`);
         console.error(`[qbo-mcp] Base URL: ${BASE_URL}`);
         console.error(`[qbo-mcp] QBO connected: ${quickbooksClient.hasCredentials()}`);
-        console.error(`[qbo-mcp] 50 tools registered`);
+        console.error(`[qbo-mcp] ${ALL_TOOLS.length} tools registered`);
     });
 }
 

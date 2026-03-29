@@ -35,6 +35,18 @@ export interface PersistedQBOToken {
     updatedAt: number;
 }
 
+export type ApiKeyRole = "admin" | "readonly" | "finance" | "editor";
+
+export interface PersistedApiKey {
+    id: string;
+    keyHash: string;
+    owner: string;
+    role: ApiKeyRole;
+    label: string;
+    active: boolean;
+    createdAt: number;
+}
+
 // ── Store ───────────────────────────────────────────────────────────────────
 
 const DB_DIR = process.env.QBO_MCP_DATA_DIR ?? join(homedir(), ".qbo-mcp");
@@ -65,6 +77,8 @@ export class TokenStore {
                 type        TEXT NOT NULL CHECK(type IN ('access', 'refresh')),
                 client_id   TEXT NOT NULL,
                 scopes      TEXT NOT NULL DEFAULT '[]',
+                role        TEXT NOT NULL DEFAULT 'admin',
+                owner       TEXT NOT NULL DEFAULT '',
                 expires_at  INTEGER NOT NULL
             );
 
@@ -73,6 +87,16 @@ export class TokenStore {
                 refresh_token   TEXT NOT NULL,
                 realm_id        TEXT NOT NULL,
                 updated_at      INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS api_keys (
+                id          TEXT PRIMARY KEY,
+                key_hash    TEXT NOT NULL UNIQUE,
+                owner       TEXT NOT NULL,
+                role        TEXT NOT NULL DEFAULT 'readonly',
+                label       TEXT NOT NULL DEFAULT '',
+                active      INTEGER NOT NULL DEFAULT 1,
+                created_at  INTEGER NOT NULL
             );
         `);
     }
@@ -104,18 +128,18 @@ export class TokenStore {
 
     // ── MCP Tokens ──────────────────────────────────────────────────────
 
-    saveToken(tok: PersistedToken): void {
+    saveToken(tok: PersistedToken & { role?: string; owner?: string }): void {
         this.db.prepare(`
-            INSERT OR REPLACE INTO tokens (token, type, client_id, scopes, expires_at)
-            VALUES (?, ?, ?, ?, ?)
-        `).run(tok.token, tok.type, tok.clientId, tok.scopes, tok.expiresAt);
+            INSERT OR REPLACE INTO tokens (token, type, client_id, scopes, role, owner, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(tok.token, tok.type, tok.clientId, tok.scopes, tok.role ?? "admin", tok.owner ?? "", tok.expiresAt);
     }
 
-    getAllTokens(type: "access" | "refresh"): PersistedToken[] {
+    getAllTokens(type: "access" | "refresh"): (PersistedToken & { role: string; owner: string })[] {
         return this.db.prepare(`
-            SELECT token, type, client_id AS clientId, scopes, expires_at AS expiresAt
+            SELECT token, type, client_id AS clientId, scopes, role, owner, expires_at AS expiresAt
             FROM tokens WHERE type = ?
-        `).all(type) as PersistedToken[];
+        `).all(type) as (PersistedToken & { role: string; owner: string })[];
     }
 
     deleteToken(token: string, type: string): void {
@@ -126,6 +150,34 @@ export class TokenStore {
         const r = this.db.prepare(`DELETE FROM tokens WHERE expires_at < ? AND expires_at != 0`)
             .run(Date.now());
         return r.changes;
+    }
+
+    // ── API Keys ────────────────────────────────────────────────────────
+
+    saveApiKey(key: PersistedApiKey): void {
+        this.db.prepare(`
+            INSERT OR REPLACE INTO api_keys (id, key_hash, owner, role, label, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(key.id, key.keyHash, key.owner, key.role, key.label, key.active ? 1 : 0, key.createdAt);
+    }
+
+    getApiKeyByHash(keyHash: string): PersistedApiKey | undefined {
+        const row = this.db.prepare(`
+            SELECT id, key_hash AS keyHash, owner, role, label, active, created_at AS createdAt
+            FROM api_keys WHERE key_hash = ? AND active = 1
+        `).get(keyHash) as any;
+        return row ? { ...row, active: !!row.active } : undefined;
+    }
+
+    getAllApiKeys(): PersistedApiKey[] {
+        return (this.db.prepare(`
+            SELECT id, key_hash AS keyHash, owner, role, label, active, created_at AS createdAt
+            FROM api_keys ORDER BY created_at DESC
+        `).all() as any[]).map(r => ({ ...r, active: !!r.active }));
+    }
+
+    deactivateApiKey(id: string): void {
+        this.db.prepare(`UPDATE api_keys SET active = 0 WHERE id = ?`).run(id);
     }
 
     // ── QBO Tokens ──────────────────────────────────────────────────────
