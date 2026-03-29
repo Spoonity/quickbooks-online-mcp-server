@@ -116,7 +116,7 @@ function registerToolsForRole(server: ReturnType<typeof QuickbooksMCPServer.GetS
     // so we define the role check inline using the same logic.
     const ROLE_PERMS: Record<string, { allowed: string[]; denied: string[] }> = {
         admin:    { allowed: ["*"], denied: [] },
-        readonly: { allowed: ["search_", "get_", "read_"], denied: [] },
+        readonly: { allowed: ["search_customers", "get_customer", "search_invoices", "read_invoice", "search_estimates", "get_estimate", "search_items", "read_item", "search_bills", "get_bill", "search_vendors", "get_vendor"], denied: [] },
         finance:  { allowed: ["search_", "get_", "read_", "create_invoice", "update_invoice", "create_bill", "update_bill", "create_bill_payment", "update_bill_payment", "get_bill_payment", "search_bill_payment", "create_purchase", "update_purchase", "get_purchase", "search_purchase", "search_accounts", "create_account", "update_account", "create_journal_entry", "update_journal_entry", "get_journal_entry", "search_journal_entry"], denied: ["delete_"] },
         editor:   { allowed: ["*"], denied: ["delete_"] },
     };

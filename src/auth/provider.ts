@@ -53,7 +53,14 @@ const ROLE_PERMISSIONS: Record<ApiKeyRole, { allowedPrefixes: string[]; deniedPr
         deniedPrefixes: [],
     },
     readonly: {
-        allowedPrefixes: ["search_", "get_", "read_"],
+        allowedPrefixes: [
+            "search_customers", "get_customer",
+            "search_invoices", "read_invoice",
+            "search_estimates", "get_estimate",
+            "search_items", "read_item",
+            "search_bills", "get_bill",
+            "search_vendors", "get_vendor",
+        ],
         deniedPrefixes: [],
     },
     finance: {
