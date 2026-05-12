@@ -225,7 +225,9 @@ async function startHttpServer() {
 
     const app = express();
     app.set("trust proxy", 1);
-    app.use(express.json({ limit: "1mb" }));  // Body size limit for all JSON payloads
+    // NOTE: Do NOT add global express.json() — MCP's StreamableHTTPServerTransport
+    // handles its own body parsing. A global json middleware consumes the body
+    // before the transport can read it, causing "Parse error: Invalid JSON".
 
     // ── Persistent store ────────────────────────────────────────────────
     const tokenStore = new TokenStore();
@@ -525,7 +527,7 @@ async function startHttpServer() {
         res.json({ keys });
     });
 
-    app.post("/admin/keys", bearerAuth, express.json(), async (req, res) => {
+    app.post("/admin/keys", bearerAuth, express.json({ limit: "1mb" }), async (req, res) => {
         const authInfo = (req as any).auth;
         if (authInfo?.extra?.role !== "admin") {
             res.status(403).json({ error: "Admin access required" });
