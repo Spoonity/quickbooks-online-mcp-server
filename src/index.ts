@@ -77,13 +77,39 @@ import { GetPurchaseTool } from "./tools/get-purchase.tool.js";
 import { UpdatePurchaseTool } from "./tools/update-purchase.tool.js";
 import { DeletePurchaseTool } from "./tools/delete-purchase.tool.js";
 import { SearchPurchasesTool } from "./tools/search-purchases.tool.js";
+import { SearchProjectsTool } from "./tools/search-projects.tool.js";
+import { GetProjectTool } from "./tools/get-project.tool.js";
+import { CreateProjectTool } from "./tools/create-project.tool.js";
+import { UpdateProjectTool } from "./tools/update-project.tool.js";
+import { ReportProfitLossTool } from "./tools/report-profit-loss.tool.js";
+import { ReportBalanceSheetTool } from "./tools/report-balance-sheet.tool.js";
+import { ReportCashFlowTool } from "./tools/report-cash-flow.tool.js";
+import { ReportTrialBalanceTool } from "./tools/report-trial-balance.tool.js";
+import { ReportGeneralLedgerTool } from "./tools/report-general-ledger.tool.js";
+import { ReportAgedReceivablesTool } from "./tools/report-aged-receivables.tool.js";
+import { ReportAgedPayablesTool } from "./tools/report-aged-payables.tool.js";
+
+// Bulk entity tools (Payments, Credit Memos, Sales Receipts, Deposits, POs, Vendor Credits, Transfers, Tax, Classes, Departments)
+import {
+    SearchPaymentsTool, GetPaymentTool, CreatePaymentTool, UpdatePaymentTool, DeletePaymentTool, VoidPaymentTool,
+    SearchCreditMemosTool, GetCreditMemoTool, CreateCreditMemoTool, UpdateCreditMemoTool, DeleteCreditMemoTool,
+    SearchSalesReceiptsTool, GetSalesReceiptTool, CreateSalesReceiptTool, UpdateSalesReceiptTool, DeleteSalesReceiptTool,
+    SearchDepositsTool, GetDepositTool, CreateDepositTool, UpdateDepositTool, DeleteDepositTool,
+    SearchPurchaseOrdersTool, GetPurchaseOrderTool, CreatePurchaseOrderTool, UpdatePurchaseOrderTool, DeletePurchaseOrderTool,
+    SearchVendorCreditsTool, GetVendorCreditTool, CreateVendorCreditTool, UpdateVendorCreditTool, DeleteVendorCreditTool,
+    SearchTransfersTool, GetTransferTool, CreateTransferTool, UpdateTransferTool, DeleteTransferTool,
+    SearchTaxCodesTool, GetTaxCodeTool,
+    SearchTaxRatesTool, GetTaxRateTool,
+    SearchClassesTool, GetClassTool, CreateClassTool, UpdateClassTool,
+    SearchDepartmentsTool, GetDepartmentTool, CreateDepartmentTool, UpdateDepartmentTool,
+} from "./tools/bulk-entity-tools.js";
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
 const TRANSPORT = process.env.MCP_TRANSPORT ?? (process.argv.includes("--http") ? "http" : "stdio");
 const PORT = parseInt(process.env.PORT ?? process.env.MCP_PORT ?? "3100", 10);
 const BASE_URL = process.env.MCP_BASE_URL ?? `http://localhost:${PORT}`;
-const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN ?? "*";
+const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN ?? "";
 const MAX_SESSIONS = parseInt(process.env.MCP_MAX_SESSIONS ?? "50", 10);
 const SESSION_TTL_MS = parseInt(process.env.MCP_SESSION_TTL_MS ?? String(30 * 60 * 1000), 10);
 
@@ -102,6 +128,29 @@ const ALL_TOOLS: Array<{ name: string; description: string; schema: any; handler
     CreateJournalEntryTool, GetJournalEntryTool, UpdateJournalEntryTool, DeleteJournalEntryTool, SearchJournalEntriesTool,
     CreateBillPaymentTool, GetBillPaymentTool, UpdateBillPaymentTool, DeleteBillPaymentTool, SearchBillPaymentsTool,
     CreatePurchaseTool, GetPurchaseTool, UpdatePurchaseTool, DeletePurchaseTool, SearchPurchasesTool,
+    SearchProjectsTool, GetProjectTool, CreateProjectTool, UpdateProjectTool,
+    ReportProfitLossTool, ReportBalanceSheetTool, ReportCashFlowTool,
+    ReportTrialBalanceTool, ReportGeneralLedgerTool,
+    ReportAgedReceivablesTool, ReportAgedPayablesTool,
+    // Payments
+    SearchPaymentsTool, GetPaymentTool, CreatePaymentTool, UpdatePaymentTool, DeletePaymentTool, VoidPaymentTool,
+    // Credit Memos
+    SearchCreditMemosTool, GetCreditMemoTool, CreateCreditMemoTool, UpdateCreditMemoTool, DeleteCreditMemoTool,
+    // Sales Receipts
+    SearchSalesReceiptsTool, GetSalesReceiptTool, CreateSalesReceiptTool, UpdateSalesReceiptTool, DeleteSalesReceiptTool,
+    // Deposits
+    SearchDepositsTool, GetDepositTool, CreateDepositTool, UpdateDepositTool, DeleteDepositTool,
+    // Purchase Orders
+    SearchPurchaseOrdersTool, GetPurchaseOrderTool, CreatePurchaseOrderTool, UpdatePurchaseOrderTool, DeletePurchaseOrderTool,
+    // Vendor Credits
+    SearchVendorCreditsTool, GetVendorCreditTool, CreateVendorCreditTool, UpdateVendorCreditTool, DeleteVendorCreditTool,
+    // Transfers
+    SearchTransfersTool, GetTransferTool, CreateTransferTool, UpdateTransferTool, DeleteTransferTool,
+    // Tax (read-only)
+    SearchTaxCodesTool, GetTaxCodeTool, SearchTaxRatesTool, GetTaxRateTool,
+    // Classes & Departments
+    SearchClassesTool, GetClassTool, CreateClassTool, UpdateClassTool,
+    SearchDepartmentsTool, GetDepartmentTool, CreateDepartmentTool, UpdateDepartmentTool,
 ];
 
 /** Register all tools (used in stdio mode — full access). */
@@ -116,8 +165,8 @@ function registerToolsForRole(server: ReturnType<typeof QuickbooksMCPServer.GetS
     // so we define the role check inline using the same logic.
     const ROLE_PERMS: Record<string, { allowed: string[]; denied: string[] }> = {
         admin:    { allowed: ["*"], denied: [] },
-        readonly: { allowed: ["search_customers", "get_customer", "search_invoices", "read_invoice", "search_estimates", "get_estimate", "search_items", "read_item", "search_bills", "get_bill", "search_vendors", "get_vendor"], denied: [] },
-        finance:  { allowed: ["search_", "get_", "read_", "create_invoice", "update_invoice", "create_bill", "update_bill", "create_bill_payment", "update_bill_payment", "get_bill_payment", "search_bill_payment", "create_purchase", "update_purchase", "get_purchase", "search_purchase", "search_accounts", "create_account", "update_account", "create_journal_entry", "update_journal_entry", "get_journal_entry", "search_journal_entry"], denied: ["delete_"] },
+        readonly: { allowed: ["search_", "get_", "read_", "report_"], denied: [] },
+        finance:  { allowed: ["search_", "get_", "read_", "report_", "create_", "update_", "void_"], denied: ["delete_"] },
         editor:   { allowed: ["*"], denied: ["delete_"] },
     };
     const perms = ROLE_PERMS[role] ?? ROLE_PERMS.readonly;
@@ -158,7 +207,7 @@ async function startStdioServer() {
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("[qbo-mcp] Running in stdio mode (50 tools)");
+    console.error(`[qbo-mcp] Running in stdio mode (${ALL_TOOLS.length} tools)`);
 }
 
 // ─── HTTP Transport (with OAuth) ────────────────────────────────────────────
@@ -176,9 +225,11 @@ async function startHttpServer() {
 
     const app = express();
     app.set("trust proxy", 1);
+    app.use(express.json({ limit: "1mb" }));  // Body size limit for all JSON payloads
 
     // ── Persistent store ────────────────────────────────────────────────
     const tokenStore = new TokenStore();
+    await tokenStore.hydrate(); // Restore QBO tokens & API keys from Secret Manager
     quickbooksClient.setTokenStore(tokenStore);
 
     // ── MCP OAuth provider ──────────────────────────────────────────────
@@ -204,6 +255,14 @@ async function startHttpServer() {
         message: { error: "Too many login attempts." },
     });
 
+    const mcpRateLimiter = rateLimit({
+        windowMs: 60 * 1000,
+        limit: 120,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: { error: "Too many requests. Please slow down." },
+    });
+
     // ── Auth routes ─────────────────────────────────────────────────────
     app.use("/token", tokenRateLimiter);
     app.post("/login", loginRateLimiter, express.urlencoded({ extended: false }), oauthProvider.handleLoginPost);
@@ -223,12 +282,30 @@ async function startHttpServer() {
         process.exit(1);
     }
 
-    // ── CORS ────────────────────────────────────────────────────────────
+    // ── Security headers ─────────────────────────────────────────────────
     app.use((_req, res, next) => {
-        res.header("Access-Control-Allow-Origin", CORS_ORIGIN);
+        // CORS: restrict to known MCP client origins (no wildcard fallback)
+        const ALLOWED_ORIGINS = [
+            "https://claude.ai",
+            "https://chatgpt.com",
+            "https://platform.openai.com",
+        ];
+        // Only add CORS origin header if explicitly allowed
+        const origin = _req.headers.origin;
+        if (origin) {
+            if (ALLOWED_ORIGINS.includes(origin) || (CORS_ORIGIN && CORS_ORIGIN === origin)) {
+                res.header("Access-Control-Allow-Origin", origin);
+            }
+        }
         res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
         res.header("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, Mcp-Session-Id, Last-Event-ID");
         res.header("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        // Security headers
+        res.header("X-Content-Type-Options", "nosniff");
+        res.header("X-Frame-Options", "DENY");
+        res.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+        res.header("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+        res.header("Referrer-Policy", "strict-origin-when-cross-origin");
         if (_req.method === "OPTIONS") { res.sendStatus(204); return; }
         next();
     });
@@ -236,8 +313,22 @@ async function startHttpServer() {
     // ── Bearer auth middleware ───────────────────────────────────────────
     const bearerAuth = requireBearerAuth({ verifier: oauthProvider });
 
-    // ── Health endpoint ─────────────────────────────────────────────────
+    // ── Health endpoint (minimal info for unauthenticated callers) ──────
     app.get("/health", (_req, res) => {
+        res.json({
+            status: "ok",
+            tools: ALL_TOOLS.length,
+            qboConnected: quickbooksClient.hasCredentials(),
+        });
+    });
+
+    // ── Detailed health (authenticated) ─────────────────────────────────
+    app.get("/health/details", bearerAuth, (_req, res) => {
+        const authInfo = (_req as any).auth;
+        if (authInfo?.extra?.role !== "admin") {
+            res.status(403).json({ error: "Admin access required" });
+            return;
+        }
         res.json({
             status: "ok",
             qboConnected: quickbooksClient.hasCredentials(),
@@ -245,9 +336,15 @@ async function startHttpServer() {
         });
     });
 
-    // ── QBO Setup endpoint (for initial/re-auth) ────────────────────────
-    app.get("/auth/quickbooks/setup", (_req, res) => {
+    // ── QBO Setup endpoint (admin-only, prevents unauthorized re-auth) ──
+    app.get("/auth/quickbooks/setup", bearerAuth, (_req, res) => {
+        const authInfo = (_req as any).auth;
+        if (authInfo?.extra?.role !== "admin") {
+            res.status(403).json({ error: "Admin access required to re-authorize QuickBooks." });
+            return;
+        }
         const authUrl = quickbooksClient.getAuthorizationUrl();
+        console.error(`[qbo] Setup initiated by ${authInfo?.extra?.owner}`);
         res.redirect(302, authUrl);
     });
 
@@ -262,10 +359,11 @@ async function startHttpServer() {
             </body></html>`);
         } catch (err: any) {
             console.error("[qbo] OAuth callback error:", err);
+            // Sanitize: never expose raw error messages to the client
             res.status(500).send(`<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#fef2f2">
                 <div style="text-align:center">
                     <h2 style="color:#dc2626">Error connecting QuickBooks</h2>
-                    <p style="color:#666;margin-top:8px;">${err.message}</p>
+                    <p style="color:#666;margin-top:8px;">Authorization failed. Please check your credentials and try again.</p>
                 </div>
             </body></html>`);
         }
@@ -289,8 +387,24 @@ async function startHttpServer() {
     };
     const sessions = new Map<string, SessionEntry>();
 
+    // ── Audit logger for tool calls ──────────────────────────────────────
+    function auditLogToolCall(body: any, owner: string, role: string): void {
+        try {
+            // JSON-RPC: method === "tools/call" contains the tool name in params.name
+            if (body?.method === "tools/call" && body?.params?.name) {
+                console.error(JSON.stringify({
+                    event: "tool_call",
+                    tool: body.params.name,
+                    owner,
+                    role,
+                    ts: new Date().toISOString(),
+                }));
+            }
+        } catch { /* audit logging should never break request flow */ }
+    }
+
     // ── MCP endpoint ────────────────────────────────────────────────────
-    app.post("/", bearerAuth, async (req, res) => {
+    app.post("/", mcpRateLimiter, bearerAuth, async (req, res) => {
         try {
             const sessionId = req.headers["mcp-session-id"] as string | undefined;
             const existing = sessionId ? sessions.get(sessionId) : undefined;
@@ -302,6 +416,11 @@ async function startHttpServer() {
                     existing.transport.close?.();
                     console.error(`[session] Expired: ${sessionId}`);
                 }, SESSION_TTL_MS);
+
+                // Audit log tool calls on existing sessions
+                const authInfo = (req as any).auth;
+                auditLogToolCall(req.body, authInfo?.extra?.owner ?? "unknown", authInfo?.extra?.role ?? "unknown");
+
                 await existing.transport.handleRequest(req, res);
                 return;
             }
@@ -334,6 +453,10 @@ async function startHttpServer() {
             });
 
             await sessionServer.connect(transport);
+
+            // Audit log tool calls on new sessions
+            auditLogToolCall(req.body, owner, role);
+
             await transport.handleRequest(req, res);
 
             const sid = transport.sessionId;
@@ -357,6 +480,16 @@ async function startHttpServer() {
         const sessionId = req.headers["mcp-session-id"] as string;
         const existing = sessionId ? sessions.get(sessionId) : undefined;
         if (!existing) { res.status(404).json({ error: "Session not found" }); return; }
+
+        // Start SSE keep-alive heartbeat to prevent Cloud Run connection drops (every 15s)
+        const keepaliveTimer = setInterval(() => {
+            if (res.headersSent && !res.writableEnded) {
+                res.write(": keepalive\n\n");
+            }
+        }, 15000);
+        
+        req.on("close", () => clearInterval(keepaliveTimer));
+
         await existing.transport.handleRequest(req, res);
     });
 
@@ -468,26 +601,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .badge{display:inline-block;background:#172554;color:#3b82f6;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600;margin-bottom:16px}
 h1{font-size:24px;font-weight:700;margin-bottom:8px}
 .sub{color:#94a3b8;font-size:14px;margin-bottom:24px}
-.stat{display:flex;justify-content:center;gap:32px;margin-bottom:24px}
-.stat div{text-align:center}
-.stat .num{font-size:28px;font-weight:700;color:#3b82f6}
-.stat .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
-.links{border-top:1px solid #334155;padding-top:20px;font-size:13px;color:#64748b}
+.links{font-size:13px;color:#64748b}
 a{color:#3b82f6;text-decoration:none}
 a:hover{text-decoration:underline}
 </style></head><body>
 <div class="card">
 <div class="badge">MCP Server</div>
 <h1>QuickBooks Online</h1>
-<p class="sub">Production-grade MCP server for QuickBooks Online with OAuth 2.1 authentication</p>
-<div class="stat">
-  <div><div class="num">50</div><div class="lbl">Tools</div></div>
-  <div><div class="num">10</div><div class="lbl">Entity Types</div></div>
-</div>
+<p class="sub">Authenticated MCP server for QuickBooks Online</p>
 <div class="links">
-  <a href="/.well-known/oauth-authorization-server">OAuth Discovery</a> · 
-  <a href="/health">Health Check</a> · 
-  <a href="/auth/quickbooks/setup">QBO Setup</a>
+  <a href="/.well-known/oauth-authorization-server">OAuth Discovery</a>
 </div>
 </div>
 </body></html>`;
@@ -497,3 +620,33 @@ main().catch((error) => {
     console.error("Fatal:", error);
     process.exit(1);
 });
+
+// ── Graceful Shutdown ───────────────────────────────────────────────────────
+
+function setupGracefulShutdown(): void {
+    let shuttingDown = false;
+
+    const shutdown = async (signal: string) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.error(`[qbo-mcp] ${signal} received — shutting down gracefully...`);
+
+        // Give in-flight requests 5 seconds to complete
+        const forceExit = setTimeout(() => {
+            console.error("[qbo-mcp] Forcing exit after timeout");
+            process.exit(1);
+        }, 5000);
+        forceExit.unref();
+
+        setTimeout(() => {
+            console.error("[qbo-mcp] Shutdown complete");
+            clearTimeout(forceExit);
+            process.exit(0);
+        }, 2000);
+    };
+
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
+}
+
+setupGracefulShutdown();

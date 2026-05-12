@@ -229,6 +229,52 @@ class QuickbooksClient {
         }
         return this.quickbooksInstance;
     }
+
+    /** Get the current realm ID (company ID). */
+    getRealmId(): string | undefined {
+        return this.realmId;
+    }
+
+    /** Whether the connected QBO environment is sandbox. */
+    isSandbox(): boolean {
+        return this.environment === "sandbox";
+    }
+
+    /**
+     * Execute a GraphQL query against the QBO API.
+     * Used for Premium APIs (Projects, etc.) that aren't available via REST.
+     * Automatically handles token refresh.
+     */
+    async graphqlQuery<T = any>(query: string, variables?: Record<string, any>): Promise<T> {
+        // Ensure we have a valid access token
+        await this.authenticate();
+
+        const baseUrl = this.isSandbox()
+            ? "https://qb-sandbox.api.intuit.com"
+            : "https://qb.api.intuit.com";
+
+        const response = await fetch(`${baseUrl}/graphql`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${this.accessToken}`,
+            },
+            body: JSON.stringify({ query, variables }),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`QBO GraphQL error (${response.status}): ${text}`);
+        }
+
+        const json = await response.json() as { data?: T; errors?: Array<{ message: string }> };
+
+        if (json.errors && json.errors.length > 0) {
+            throw new Error(`QBO GraphQL: ${json.errors.map(e => e.message).join("; ")}`);
+        }
+
+        return json.data as T;
+    }
 }
 
 // ── Singleton ───────────────────────────────────────────────────────────────

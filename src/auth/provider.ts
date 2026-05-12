@@ -35,7 +35,8 @@ import { TokenStore, ApiKeyRole } from "./token-store.js";
 // ── Configuration ───────────────────────────────────────────────────────────
 
 const BOOTSTRAP_API_KEY = process.env.MCP_API_KEY ?? "";
-const ACCESS_TOKEN_TTL_S = 24 * 60 * 60; // 24 hours
+const ACCESS_TOKEN_TTL_S = 60 * 60;      // 1 hour (was 24h — shortened for financial system)
+const REFRESH_TOKEN_TTL_S = 14 * 24 * 60 * 60; // 14 days (was 90d — shortened to limit blast radius)
 
 function hashKey(key: string): string {
     return createHash("sha256").update(key).digest("hex");
@@ -406,11 +407,11 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         };
 
         this.accessTokens.set(accessToken, tokenEntry);
-        this.refreshTokens.set(refreshToken, { ...tokenEntry, expiresAt: Infinity });
+        this.refreshTokens.set(refreshToken, { ...tokenEntry, expiresAt: Date.now() + REFRESH_TOKEN_TTL_S * 1000 });
 
         const persistBase = { clientId: client.client_id, scopes: "[]", role: entry.role, owner: entry.owner };
         this.store?.saveToken({ ...persistBase, token: accessToken, type: "access", expiresAt });
-        this.store?.saveToken({ ...persistBase, token: refreshToken, type: "refresh", expiresAt: Infinity });
+        this.store?.saveToken({ ...persistBase, token: refreshToken, type: "refresh", expiresAt: Date.now() + REFRESH_TOKEN_TTL_S * 1000 });
 
         console.error(`[oauth] Issued tokens — role: ${entry.role}, owner: ${entry.owner}`);
 
@@ -445,7 +446,7 @@ export class QBOOAuthProvider implements OAuthServerProvider {
 
         const persistBase = { clientId: entry.clientId, scopes: "[]", role: entry.role, owner: entry.owner };
         this.store?.saveToken({ ...persistBase, token: newAccessToken, type: "access", expiresAt: newExpiry });
-        this.store?.saveToken({ ...persistBase, token: newRefreshToken, type: "refresh", expiresAt: Infinity });
+        this.store?.saveToken({ ...persistBase, token: newRefreshToken, type: "refresh", expiresAt: Date.now() + REFRESH_TOKEN_TTL_S * 1000 });
 
         return {
             access_token: newAccessToken,
