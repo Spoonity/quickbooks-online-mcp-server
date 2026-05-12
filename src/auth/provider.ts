@@ -54,26 +54,11 @@ const ROLE_PERMISSIONS: Record<ApiKeyRole, { allowedPrefixes: string[]; deniedPr
         deniedPrefixes: [],
     },
     readonly: {
-        allowedPrefixes: [
-            "search_customers", "get_customer",
-            "search_invoices", "read_invoice",
-            "search_estimates", "get_estimate",
-            "search_items", "read_item",
-            "search_bills", "get_bill",
-            "search_vendors", "get_vendor",
-        ],
+        allowedPrefixes: ["search_", "get_", "read_", "report_"],
         deniedPrefixes: [],
     },
     finance: {
-        allowedPrefixes: [
-            "search_", "get_", "read_",       // all reads
-            "create_invoice", "update_invoice", // invoices
-            "create_bill", "update_bill",       // bills
-            "create_bill_payment", "update_bill_payment", "get_bill_payment", "search_bill_payment",
-            "create_purchase", "update_purchase", "get_purchase", "search_purchase",
-            "search_accounts", "create_account", "update_account",
-            "create_journal_entry", "update_journal_entry", "get_journal_entry", "search_journal_entry",
-        ],
+        allowedPrefixes: ["search_", "get_", "read_", "report_", "create_", "update_", "void_"],
         deniedPrefixes: ["delete_"],
     },
     editor: {
@@ -439,7 +424,7 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         const newExpiry = Date.now() + ACCESS_TOKEN_TTL_S * 1000;
 
         this.accessTokens.set(newAccessToken, { ...entry, expiresAt: newExpiry });
-        this.refreshTokens.set(newRefreshToken, { ...entry, expiresAt: Date.now() + 90 * 24 * 60 * 60 * 1000 });
+        this.refreshTokens.set(newRefreshToken, { ...entry, expiresAt: Date.now() + REFRESH_TOKEN_TTL_S * 1000 });
 
         this.refreshTokens.delete(refreshToken);
         this.store?.deleteToken(refreshToken, "refresh");
