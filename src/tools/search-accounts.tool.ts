@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_accounts";
-const toolDescription = "Search chart‑of‑accounts entries using criteria.";
+const toolDescription = "Search and list chart-of-accounts entries in QuickBooks Online. Filter by account name, type, sub-type, or balance. Use this to find revenue accounts, expense accounts, bank accounts, or verify account mappings.";
 
 // Allowed field lists based on QuickBooks Online Account entity documentation. Only these can be
 // used in the search criteria.

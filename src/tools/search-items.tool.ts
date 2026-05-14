@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_items";
-const toolDescription = "Search items in QuickBooks Online using criteria (maps to node-quickbooks findItems).";
+const toolDescription = "Search and list products/services (items) in QuickBooks Online. Filter by name, type, price, SKU, or active status. Use this to find products, services, look up pricing, or verify line items on invoices.";
 
 // Allowed field lists derived from QuickBooks Online Item entity documentation (Filterable/Sortable columns)
 const ALLOWED_FILTER_FIELDS = [

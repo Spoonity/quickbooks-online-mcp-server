@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // Define the tool metadata
 const toolName = "search_journal_entries";
-const toolDescription = "Search journal entries in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list journal entries in QuickBooks Online. Filter by date, account, or amount. Use this to find adjusting entries, manual transactions, or audit the general journal.";
 
 // Define the expected input schema for searching journal entries
 const toolSchema = z.object({

@@ -232,13 +232,15 @@ async function testTool(name, args) {
 
         const content = result.data?.result?.content;
         if (content && content.length > 0) {
+            const summary = content[0]?.text || "";
             const text = content.map(c => c.text).join("\n");
-            if (text.includes("Error")) {
-                // Some errors are expected (e.g., project create needing Silver tier)
-                if (text.includes("project-management") || text.includes("Premium")) {
+            // Only check the summary line for errors — data content may contain
+            // words like "Error" or "Premium" in entity names (e.g. "Premium Plan")
+            if (summary.startsWith("Error")) {
+                if (summary.includes("project-management") || summary.includes("Premium")) {
                     skip(name, "Premium API required");
                 } else {
-                    fail(name, text.substring(0, 120));
+                    fail(name, summary.substring(0, 120));
                 }
             } else {
                 const preview = text.substring(0, 80).replace(/\n/g, " ");

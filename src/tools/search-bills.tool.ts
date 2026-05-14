@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_bills";
-const toolDescription = "Search bills in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list bills (vendor invoices) in QuickBooks Online. Filter by vendor, due date, amount, or status. Use this to find outstanding payables, look up vendor charges, or analyze spending.";
 
 // A subset of commonly-used Bill fields that can be filtered on.
 // This is *not* an exhaustive list, but provides helpful IntelliSense / docs

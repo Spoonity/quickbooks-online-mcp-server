@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_vendors";
-const toolDescription = "Search vendors in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list vendors (suppliers) in QuickBooks Online. Filter by name, email, balance, or active status. Use this to find suppliers, check vendor balances, or look up vendor contact details.";
 
 // A subset of commonly-used Vendor fields that can be filtered on.
 // This is *not* an exhaustive list, but provides helpful IntelliSense / docs

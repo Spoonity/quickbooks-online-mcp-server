@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_customers";
-const toolDescription = "Search customers in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list customers in QuickBooks Online. Filter by name, email, phone, balance, or active status. Use this to find customers, look up contact info, check customer balances, or verify billing details.";
 
 // Common Customer entity fields that are filterable. Not exhaustive – any
 // property present on the QuickBooks Customer object is valid.

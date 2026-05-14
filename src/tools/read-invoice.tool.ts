@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "read_invoice";
-const toolDescription = "Read a single invoice from QuickBooks Online by its ID.";
+const toolDescription = "Read a single invoice from QuickBooks Online by its ID. Returns full invoice details including line items, amounts, customer info, payment status, and dates. Use after search_invoices to get complete invoice data.";
 
 const toolSchema = z.object({
   invoice_id: z.string().min(1, { message: "Invoice ID is required" }),

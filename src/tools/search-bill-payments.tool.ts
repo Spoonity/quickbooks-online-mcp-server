@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // Define the tool metadata
 const toolName = "search_bill_payments";
-const toolDescription = "Search bill payments in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list bill payments in QuickBooks Online. Filter by vendor, date, or amount. Use this to find payments made to vendors, track AP disbursements, or verify bill payment history.";
 
 // Define the expected input schema for searching bill payments
 const toolSchema = z.object({

@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_invoices";
-const toolDescription = "Search invoices in QuickBooks Online using criteria (maps to node-quickbooks findInvoices).";
+const toolDescription = "Search and list invoices in QuickBooks Online. Filter by customer, date, amount, status, doc number, etc. Use this to find invoices, check outstanding balances, look up billing history, or query revenue by date range.";
 
 // ALLOWED FIELD LISTS (derived from Quickbooks Invoice entity docs – Filterable and Sortable columns)
 const ALLOWED_FILTER_FIELDS = [

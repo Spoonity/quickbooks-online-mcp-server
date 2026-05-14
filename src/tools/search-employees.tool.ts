@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // Define the tool metadata
 const toolName = "search_employees";
-const toolDescription = "Search employees in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list employees in QuickBooks Online. Filter by name, email, or active status. Use this to find employee records for payroll, expense tracking, or org lookups.";
 
 // Define the expected input schema for searching employees
 const toolSchema = z.object({

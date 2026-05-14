@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // Define the tool metadata
 const toolName = "search_purchases";
-const toolDescription = "Search purchases in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list purchases (expenses/checks) in QuickBooks Online. Filter by vendor, date, amount, or payment type. Use this to find expense transactions, check disbursements, or analyze spending.";
 
 // Define the expected input schema for searching purchases
 const toolSchema = z.object({

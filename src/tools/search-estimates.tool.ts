@@ -3,7 +3,7 @@ import { ToolDefinition } from "../types/tool-definition.js";
 import { z } from "zod";
 
 const toolName = "search_estimates";
-const toolDescription = "Search estimates in QuickBooks Online that match given criteria.";
+const toolDescription = "Search and list estimates (quotes/proposals) in QuickBooks Online. Filter by customer, date, amount, or status. Use this to find pending quotes, track proposal history, or look up pricing sent to customers.";
 
 // A subset of commonly‑used Estimate fields that can be filtered on.
 // This is *not* an exhaustive list, but provides helpful IntelliSense / docs
