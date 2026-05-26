@@ -144,7 +144,7 @@ interface TokenEntry {
 class QBOClientStore implements OAuthRegisteredClientsStore {
     clients = new Map<string, OAuthClientInformationFull>();
     private store: TokenStore | null = null;
-    _pendingRedirectUri: string | null = null;
+    _pendingRedirectUris = new Map<string, string>(); // keyed by clientId — avoids race between concurrent OAuth flows
 
     setStore(store: TokenStore): void {
         this.store = store;
@@ -166,9 +166,10 @@ class QBOClientStore implements OAuthRegisteredClientsStore {
                     existing.redirect_uris.push(uri);
                 }
             }
-            if (this._pendingRedirectUri && !existing.redirect_uris.includes(this._pendingRedirectUri)) {
-                existing.redirect_uris.push(this._pendingRedirectUri);
-                this._pendingRedirectUri = null;
+            const pendingUri = this._pendingRedirectUris.get(clientId);
+            if (pendingUri && !existing.redirect_uris.includes(pendingUri)) {
+                existing.redirect_uris.push(pendingUri);
+                this._pendingRedirectUris.delete(clientId);
             }
             return existing;
         }
@@ -255,6 +256,26 @@ export class QBOOAuthProvider implements OAuthServerProvider {
             });
         }
         console.error(`[store] Rehydrated ${this.accessTokens.size} access, ${this.refreshTokens.size} refresh token(s)`);
+
+        // Periodically evict expired in-memory tokens to prevent unbounded growth
+        const sweepInterval = setInterval(() => this.sweepExpiredEntries(), 5 * 60 * 1000);
+        sweepInterval.unref(); // Don't prevent process exit
+    }
+
+    private sweepExpiredEntries(): void {
+        const now = Date.now();
+        let swept = 0;
+        for (const [tok, e] of this.accessTokens) {
+            if (now > e.expiresAt) { this.accessTokens.delete(tok); swept++; }
+        }
+        for (const [tok, e] of this.refreshTokens) {
+            if (now > e.expiresAt) { this.refreshTokens.delete(tok); swept++; }
+        }
+        for (const [code, e] of this.authCodes) {
+            if (now > e.expiresAt) { this.authCodes.delete(code); swept++; }
+        }
+        // pendingAuthorize entries expire via their own setTimeout — no sweep needed
+        if (swept > 0) console.error(`[oauth] Swept ${swept} expired in-memory entries`);
     }
 
     get clientsStore(): OAuthRegisteredClientsStore {
@@ -272,8 +293,8 @@ export class QBOOAuthProvider implements OAuthServerProvider {
                 if (client && !client.redirect_uris.includes(redirectUri)) {
                     client.redirect_uris.push(redirectUri);
                 }
+                this._clientsStore._pendingRedirectUris.set(clientId, redirectUri);
             }
-            this._clientsStore._pendingRedirectUri = redirectUri;
         }
         next();
     };
@@ -417,6 +438,19 @@ export class QBOOAuthProvider implements OAuthServerProvider {
         const entry = this.refreshTokens.get(refreshToken);
         if (!entry || entry.clientId !== client.client_id) {
             throw new Error("Invalid refresh token");
+        }
+        if (Date.now() > entry.expiresAt) {
+            this.refreshTokens.delete(refreshToken);
+            this.store?.deleteToken(refreshToken, "refresh");
+            throw new Error("Refresh token expired");
+        }
+
+        // Invalidate all existing access tokens for this client before issuing new ones
+        for (const [tok, e] of this.accessTokens) {
+            if (e.clientId === client.client_id) {
+                this.accessTokens.delete(tok);
+                this.store?.deleteToken(tok, "access");
+            }
         }
 
         const newAccessToken = randomUUID();

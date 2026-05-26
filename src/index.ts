@@ -191,6 +191,9 @@ function registerToolsForRole(server: ReturnType<typeof QuickbooksMCPServer.GetS
 //  STARTUP
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Module-level handle so graceful shutdown can close the HTTP server
+let httpServer: import("node:http").Server | null = null;
+
 async function main() {
     if (TRANSPORT === "http") {
         await startHttpServer();
@@ -270,6 +273,17 @@ async function startHttpServer() {
         legacyHeaders: false,
         message: { error: "Too many requests. Please slow down." },
     });
+
+    const adminRateLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: 30,
+        standardHeaders: "draft-7",
+        legacyHeaders: false,
+        message: { error: "Too many admin requests." },
+    });
+
+    // State nonces for QBO OAuth flow — prevents open redirect / CSRF on callback
+    const pendingQBOStates = new Map<string, number>(); // state → expiry ms
 
     // ── Auth routes ─────────────────────────────────────────────────────
     app.use("/token", tokenRateLimiter);
@@ -351,13 +365,33 @@ async function startHttpServer() {
             res.status(403).json({ error: "Admin access required to re-authorize QuickBooks." });
             return;
         }
-        const authUrl = quickbooksClient.getAuthorizationUrl();
+        // Generate a CSRF state nonce bound to this setup request
+        const state = randomUUID();
+        pendingQBOStates.set(state, Date.now() + 10 * 60 * 1000); // 10-minute window
+        setTimeout(() => pendingQBOStates.delete(state), 10 * 60 * 1000);
+
+        const authUrl = quickbooksClient.getAuthorizationUrl(state);
         console.error(`[qbo] Setup initiated by ${authInfo?.extra?.owner}`);
         res.redirect(302, authUrl);
     });
 
     app.get("/auth/quickbooks/callback", async (req, res) => {
         try {
+            // Validate state nonce to prevent CSRF / open redirect on the callback
+            const state = req.query.state as string | undefined;
+            const expiry = state ? pendingQBOStates.get(state) : undefined;
+            if (!state || expiry === undefined || Date.now() > expiry) {
+                console.error("[qbo] OAuth callback rejected: invalid or expired state nonce");
+                res.status(403).send(`<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#fef2f2">
+                    <div style="text-align:center">
+                        <h2 style="color:#dc2626">Invalid Request</h2>
+                        <p style="color:#666;margin-top:8px;">This authorization link has expired or is invalid. Please start over.</p>
+                    </div>
+                </body></html>`);
+                return;
+            }
+            pendingQBOStates.delete(state);
+
             await quickbooksClient.handleOAuthCallback(req.url);
             res.send(`<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#f0fdf4">
                 <div style="text-align:center">
@@ -516,7 +550,7 @@ async function startHttpServer() {
     // Protected by a simple check: only admin keys can manage keys.
     // Usage: curl -H "Authorization: Bearer <admin-token>" /admin/keys
 
-    app.get("/admin/keys", bearerAuth, async (req, res) => {
+    app.get("/admin/keys", adminRateLimiter, bearerAuth, async (req, res) => {
         const authInfo = (req as any).auth;
         if (authInfo?.extra?.role !== "admin") {
             res.status(403).json({ error: "Admin access required" });
@@ -533,7 +567,7 @@ async function startHttpServer() {
         res.json({ keys });
     });
 
-    app.post("/admin/keys", bearerAuth, express.json({ limit: "1mb" }), async (req, res) => {
+    app.post("/admin/keys", adminRateLimiter, bearerAuth, express.json({ limit: "1mb" }), async (req, res) => {
         const authInfo = (req as any).auth;
         if (authInfo?.extra?.role !== "admin") {
             res.status(403).json({ error: "Admin access required" });
@@ -575,7 +609,7 @@ async function startHttpServer() {
         });
     });
 
-    app.delete("/admin/keys/:id", bearerAuth, async (req, res) => {
+    app.delete("/admin/keys/:id", adminRateLimiter, bearerAuth, async (req, res) => {
         const authInfo = (req as any).auth;
         if (authInfo?.extra?.role !== "admin") {
             res.status(403).json({ error: "Admin access required" });
@@ -587,7 +621,7 @@ async function startHttpServer() {
     });
 
     // ── Start ───────────────────────────────────────────────────────────
-    app.listen(PORT, () => {
+    httpServer = app.listen(PORT, () => {
         console.error(`[qbo-mcp] HTTP server running on port ${PORT}`);
         console.error(`[qbo-mcp] Base URL: ${BASE_URL}`);
         console.error(`[qbo-mcp] QBO connected: ${quickbooksClient.hasCredentials()}`);
@@ -639,18 +673,24 @@ function setupGracefulShutdown(): void {
         shuttingDown = true;
         console.error(`[qbo-mcp] ${signal} received — shutting down gracefully...`);
 
-        // Give in-flight requests 5 seconds to complete
         const forceExit = setTimeout(() => {
             console.error("[qbo-mcp] Forcing exit after timeout");
             process.exit(1);
         }, 5000);
         forceExit.unref();
 
-        setTimeout(() => {
+        const done = () => {
             console.error("[qbo-mcp] Shutdown complete");
             clearTimeout(forceExit);
             process.exit(0);
-        }, 2000);
+        };
+
+        if (httpServer) {
+            // Stop accepting new connections; wait for in-flight requests to finish
+            httpServer.close(done);
+        } else {
+            setTimeout(done, 500);
+        }
     };
 
     process.on("SIGTERM", () => shutdown("SIGTERM"));
