@@ -202,6 +202,12 @@ async function main() {
 // ─── Stdio Transport ────────────────────────────────────────────────────────
 
 async function startStdioServer() {
+    // Persist rotated QBO refresh tokens to ~/.qbo-mcp/store.db so each
+    // restart loads the latest token rather than the stale one in Claude's config.
+    const { TokenStore } = await import("./auth/token-store.js");
+    const store = new TokenStore();
+    quickbooksClient.setTokenStore(store);
+
     const server = QuickbooksMCPServer.GetServer();
     registerAllTools(server);
 
